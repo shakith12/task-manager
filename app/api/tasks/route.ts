@@ -75,9 +75,6 @@ export async function POST(request: NextRequest) {
     
     const result = await db.collection("tasks").insertOne(newTask);
     
-    await client.close();
-    client = undefined;
-    
     return NextResponse.json({ 
       message: "Task created successfully",
       task: { ...newTask, _id: result.insertedId }
@@ -97,15 +94,6 @@ export async function POST(request: NextRequest) {
     }
   }
 }
-    await client.close();
-    return NextResponse.json({
-      message: "Task created successfully",
-      task: { ...newTask, _id: result.insertedId },
-    });
-  } catch (error: any) {
-    console.error("Create task error:", error);
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
-  }
 }
 
 export async function DELETE(request: NextRequest) {
