@@ -28,24 +28,38 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let client: MongoClient | undefined;
   try {
     const decodedToken = await verifyAuth(request);
     if ('status' in decodedToken) {
       return decodedToken;
     }
+
     const body: TaskInput = await request.json();
     const { title, description, priority, category, dueDate } = body;
     if (!title || !priority || !category) {
       return NextResponse.json({ error: "Title, priority, and category are required" }, { status: 400 });
     }
+    
     // Connect to MongoDB
-    const client = new MongoClient(process.env.MONGODB_URI!);
+    if (!process.env.MONGODB_URI) {
+      console.error("MONGODB_URI is not defined");
+      return NextResponse.json({ error: "Database configuration error" }, { status: 500 });
+    }
+    
+    client = new MongoClient(process.env.MONGODB_URI, {
+      connectTimeoutMS: 10000, // 10 seconds
+      socketTimeoutMS: 45000,  // 45 seconds
+    });
+
     await client.connect();
+    console.log("MongoDB connected successfully");
+    
     const db = client.db("taskmanager");
     const existingTasks = await db.collection("tasks")
       .find({ userId: decodedToken.uid })
       .toArray();
-    const order = existingTasks.length;
+      
     const newTask = {
       userId: decodedToken.uid,
       title,
@@ -54,11 +68,35 @@ export async function POST(request: NextRequest) {
       priority,
       category,
       dueDate: dueDate ? new Date(dueDate) : undefined,
-      order,
+      order: existingTasks.length,
       createdAt: new Date(),
       updatedAt: new Date()
     };
+    
     const result = await db.collection("tasks").insertOne(newTask);
+    
+    await client.close();
+    client = undefined;
+    
+    return NextResponse.json({ 
+      message: "Task created successfully",
+      task: { ...newTask, _id: result.insertedId }
+    });
+  } catch (error: any) {
+    console.error("Error in POST /api/tasks:", error);
+    return NextResponse.json({ 
+      error: "Failed to create task: " + (error.message || "Unknown error") 
+    }, { status: 500 });
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+      } catch (closeError) {
+        console.error("Error closing MongoDB connection:", closeError);
+      }
+    }
+  }
+}
     await client.close();
     return NextResponse.json({
       message: "Task created successfully",
